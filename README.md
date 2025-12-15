@@ -12,7 +12,7 @@ pip install token-difr
 
 - Python >= 3.10
 - PyTorch >= 2.0.0
-- vLLM >= 0.6.0
+- vLLM >= 0.11.0
 - CUDA-capable GPU
 
 ## Quick Start
