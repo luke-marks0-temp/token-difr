@@ -30,13 +30,14 @@ outputs = [
 ]
 
 # Verify the outputs against a trusted model
+# All sampling parameters must match what was used during generation
 results = verify_outputs(
     outputs,
     model_name="meta-llama/Llama-3.1-8B-Instruct",
-    temperature=1.0,
-    top_k=50,
-    top_p=0.95,
-    seed=42,
+    temperature=1.0,  # Required: must match generation
+    top_k=50,         # Required: must match generation
+    top_p=0.95,       # Required: must match generation
+    seed=42,          # Required: must match generation
 )
 
 # Check verification results
@@ -59,16 +60,16 @@ def verify_outputs(
     outputs: list[TokenSequence],
     model_name: str,
     *,
-    temperature: float = 1.0,
-    top_k: int = 50,
-    top_p: float = 0.95,
-    seed: int = 42,
+    temperature: float,      # Required
+    top_k: int,              # Required
+    top_p: float,            # Required
+    seed: int,               # Required
     max_model_len: int | None = None,
     dtype: torch.dtype = torch.bfloat16,
     vllm_kwargs: dict[str, Any] | None = None,
     sampling_method: SamplingMethod = SamplingMethod.VLLM_GUMBEL_MAX,
     gpu_memory_utilization: float = 0.7,
-    show_progress: bool = True,
+    verbose: bool = True,
 ) -> list[list[TokenMetrics]]:
 ```
 
@@ -76,16 +77,16 @@ def verify_outputs(
 
 - `outputs`: List of `TokenSequence` objects containing prompt and output token IDs
 - `model_name`: HuggingFace model name (e.g., `"meta-llama/Llama-3.1-8B-Instruct"`)
-- `temperature`: Sampling temperature used during generation (default: 1.0)
-- `top_k`: Top-k sampling parameter (default: 50)
-- `top_p`: Top-p (nucleus) sampling parameter (default: 0.95)
-- `seed`: Random seed used during generation (default: 42)
+- `temperature`: Sampling temperature used during generation. **Required.**
+- `top_k`: Top-k sampling parameter. **Required.**
+- `top_p`: Top-p (nucleus) sampling parameter. **Required.**
+- `seed`: Random seed used during generation. **Required.**
 - `max_model_len`: Maximum model context length. If None, auto-computed from outputs
 - `dtype`: Model dtype, e.g., `torch.bfloat16`, `torch.float16` (default: `torch.bfloat16`)
 - `vllm_kwargs`: Additional kwargs for vLLM's LLM constructor (e.g., for quantization)
 - `sampling_method`: Sampling method to verify against (default: `VLLM_GUMBEL_MAX`)
 - `gpu_memory_utilization`: Fraction of GPU memory to use (default: 0.7)
-- `show_progress`: Whether to show progress bars (default: True)
+- `verbose`: Whether to show progress and print summary (default: True)
 
 **Returns:**
 
@@ -119,6 +120,21 @@ class SamplingMethod(Enum):
     VLLM_GUMBEL_MAX = "vllm_gumbel_max"
 ```
 
+### `compute_metrics_summary`
+
+```python
+def compute_metrics_summary(results: list[list[TokenMetrics]]) -> dict:
+    """Returns aggregate stats from verification results."""
+    # Returns: {
+    #     "total_tokens": int,
+    #     "exact_match_rate": float,
+    #     "avg_prob": float,
+    #     "avg_margin": float,
+    #     "avg_logit_rank": float,
+    #     "avg_gumbel_rank": float,
+    # }
+```
+
 ## Advanced Usage
 
 ### Using Quantization
@@ -127,6 +143,7 @@ class SamplingMethod(Enum):
 results = verify_outputs(
     outputs,
     model_name="meta-llama/Llama-3.1-8B-Instruct",
+    temperature=1.0, top_k=50, top_p=0.95, seed=42,
     vllm_kwargs={"quantization": "fp8"},
 )
 ```
@@ -137,6 +154,7 @@ results = verify_outputs(
 results = verify_outputs(
     outputs,
     model_name="meta-llama/Llama-3.1-8B-Instruct",
+    temperature=1.0, top_k=50, top_p=0.95, seed=42,
     vllm_kwargs={
         "kv_cache_dtype": "fp8",
         "calculate_kv_scales": True,
@@ -150,6 +168,7 @@ results = verify_outputs(
 results = verify_outputs(
     outputs,
     model_name="meta-llama/Llama-3.1-8B-Instruct",
+    temperature=1.0, top_k=50, top_p=0.95, seed=42,
     max_model_len=4096,
 )
 ```

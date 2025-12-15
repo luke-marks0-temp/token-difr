@@ -4,6 +4,7 @@ from token_difr.verify import (
     SamplingMethod,
     TokenMetrics,
     TokenSequence,
+    compute_metrics_summary,
     verify_outputs,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "TokenSequence",
     "TokenMetrics",
     "SamplingMethod",
+    "compute_metrics_summary",
     "__version__",
 ]

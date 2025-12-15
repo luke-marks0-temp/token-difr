@@ -8,7 +8,7 @@ import os
 os.environ.setdefault("VLLM_USE_V1", "1")
 
 import gc
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
@@ -31,6 +31,18 @@ class TokenSequence:
     prompt_token_ids: list[int]
     output_token_ids: list[int]
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "TokenSequence":
+        """Create from dictionary."""
+        return cls(
+            prompt_token_ids=d["prompt_token_ids"],
+            output_token_ids=d["output_token_ids"],
+        )
+
 
 @dataclass
 class TokenMetrics:
@@ -41,6 +53,10 @@ class TokenMetrics:
     margin: float
     logit_rank: float
     gumbel_rank: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return asdict(self)
 
 
 def _exponential_to_gumbel(random_exponentials: torch.Tensor, epsilon: float) -> torch.Tensor:
@@ -257,16 +273,16 @@ def verify_outputs(
     outputs: list[TokenSequence],
     model_name: str,
     *,
-    temperature: float = 1.0,
-    top_k: int = 50,
-    top_p: float = 0.95,
-    seed: int = 42,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    seed: int,
     max_model_len: int | None = None,
     dtype: torch.dtype = torch.bfloat16,
     vllm_kwargs: dict[str, Any] | None = None,
     sampling_method: SamplingMethod = SamplingMethod.VLLM_GUMBEL_MAX,
     gpu_memory_utilization: float = 0.7,
-    show_progress: bool = True,
+    verbose: bool = True,
 ) -> list[list[TokenMetrics]]:
     """
     Verify LLM outputs using Gumbel-Max sampling verification.
@@ -278,17 +294,17 @@ def verify_outputs(
     Args:
         outputs: List of TokenSequence objects containing prompt and output token IDs.
         model_name: HuggingFace model name (e.g., "meta-llama/Llama-3.1-8B-Instruct").
-        temperature: Sampling temperature used during generation. Default: 1.0.
-        top_k: Top-k sampling parameter. Default: 50.
-        top_p: Top-p (nucleus) sampling parameter. Default: 0.95.
-        seed: Random seed used during generation. Default: 42.
+        temperature: Sampling temperature used during generation. Required.
+        top_k: Top-k sampling parameter. Required.
+        top_p: Top-p (nucleus) sampling parameter. Required.
+        seed: Random seed used during generation. Required.
         max_model_len: Maximum model context length. If None, auto-computed from outputs.
         dtype: Model dtype (e.g., torch.bfloat16, torch.float16). Default: torch.bfloat16.
         vllm_kwargs: Additional keyword arguments to pass to vLLM's LLM constructor.
             Useful for quantization (e.g., {"quantization": "fp8"}) or other settings.
         sampling_method: The sampling method to verify against. Default: VLLM_GUMBEL_MAX.
         gpu_memory_utilization: Fraction of GPU memory to use. Default: 0.7.
-        show_progress: Whether to show progress bars. Default: True.
+        verbose: Whether to show progress and print a summary. Default: True.
 
     Returns:
         List of lists of TokenMetrics, one per token in each output sequence.
@@ -355,7 +371,7 @@ def verify_outputs(
     request_metadata: list[tuple[int, int, list[int]]] = []
 
     iterator = enumerate(outputs)
-    if show_progress:
+    if verbose:
         iterator = enumerate(tqdm(outputs, desc="Preparing verification prompts"))
 
     for i, req in iterator:
@@ -370,7 +386,7 @@ def verify_outputs(
         request_metadata.append((i, len(prompt_token_ids), gen_ids))
 
     # Batched generation
-    if show_progress:
+    if verbose:
         print(f"Running batched verification for {len(verify_prompts)} sequences...")
     verify_results = model.generate(verify_prompts, sampling_params=prompt_logprob_params)
 
@@ -378,7 +394,7 @@ def verify_outputs(
     all_token_metrics: list[list[TokenMetrics]] = [[] for _ in outputs]
 
     metadata_iterator = request_metadata
-    if show_progress:
+    if verbose:
         metadata_iterator = tqdm(request_metadata, desc="Computing verification metrics")
 
     for batch_idx, (orig_idx, prompt_len, gen_ids) in enumerate(metadata_iterator):
@@ -445,4 +461,65 @@ def verify_outputs(
     torch.cuda.empty_cache()
     gc.collect()
 
+    if verbose:
+        summary = compute_metrics_summary(all_token_metrics)
+        print(f"\nVerification Summary:")
+        print(f"  Total tokens: {summary['total_tokens']}")
+        print(f"  Exact match rate: {summary['exact_match_rate']:.2%}")
+        print(f"  Average probability: {summary['avg_prob']:.4f}")
+        print(f"  Average margin: {summary['avg_margin']:.4f}")
+
     return all_token_metrics
+
+
+def compute_metrics_summary(results: list[list[TokenMetrics]]) -> dict[str, Any]:
+    """
+    Compute aggregate statistics from verification results.
+
+    Args:
+        results: Output from verify_outputs().
+
+    Returns:
+        Dictionary with keys:
+            - total_tokens: Total number of tokens verified
+            - exact_match_rate: Fraction of tokens that matched exactly
+            - avg_prob: Average probability of actual tokens
+            - avg_margin: Average margin between max and actual token scores
+            - avg_logit_rank: Average logit rank of actual tokens
+            - avg_gumbel_rank: Average Gumbel rank of actual tokens
+    """
+    total_tokens = 0
+    total_matches = 0
+    total_prob = 0.0
+    total_margin = 0.0
+    total_logit_rank = 0.0
+    total_gumbel_rank = 0.0
+
+    for seq_metrics in results:
+        for m in seq_metrics:
+            total_tokens += 1
+            if m.exact_match:
+                total_matches += 1
+            total_prob += m.prob
+            total_margin += m.margin
+            total_logit_rank += m.logit_rank
+            total_gumbel_rank += m.gumbel_rank
+
+    if total_tokens == 0:
+        return {
+            "total_tokens": 0,
+            "exact_match_rate": 0.0,
+            "avg_prob": 0.0,
+            "avg_margin": 0.0,
+            "avg_logit_rank": 0.0,
+            "avg_gumbel_rank": 0.0,
+        }
+
+    return {
+        "total_tokens": total_tokens,
+        "exact_match_rate": total_matches / total_tokens,
+        "avg_prob": total_prob / total_tokens,
+        "avg_margin": total_margin / total_tokens,
+        "avg_logit_rank": total_logit_rank / total_tokens,
+        "avg_gumbel_rank": total_gumbel_rank / total_tokens,
+    }
