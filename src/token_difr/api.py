@@ -1,9 +1,5 @@
 """API-based verification using Tinker."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import torch
 from tqdm import tqdm
 
@@ -13,9 +9,6 @@ from token_difr.common import (
     _as_list,
     compute_metrics_summary,
 )
-
-if TYPE_CHECKING:
-    import tinker
 
 
 def _tinker_logprobs_to_tensor(
@@ -137,7 +130,7 @@ def verify_outputs_tinker(
         top_k: Top-k sampling parameter. Required.
         top_p: Top-p (nucleus) sampling parameter. Required.
         seed: Random seed used during generation. Required.
-        topk_logprobs: Number of top logprobs to request from Tinker. Default: 50.
+        topk_logprobs: Number of top logprobs to request from Tinker. Default: 20. (max is 20 for Tinker)
         verbose: Whether to show progress and print a summary. Default: True.
 
     Returns:
