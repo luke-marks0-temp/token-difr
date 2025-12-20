@@ -178,29 +178,40 @@ def verify_outputs_tinker(
 
     all_token_metrics: list[list[TokenMetrics]] = [[] for _ in outputs]
 
-    iterator = enumerate(outputs)
-    if verbose:
-        iterator = enumerate(tqdm(outputs, desc="Verifying via Tinker API"))
+    # Prepare requests and submit all in parallel
+    request_data: list[tuple[int, list[int], list[int]]] = []  # (index, prompt_token_ids, gen_ids)
+    futures: list[tuple[int, object]] = []  # (index, future)
 
-    for i, req in iterator:
+    for i, req in enumerate(outputs):
         prompt_token_ids: list[int] = _as_list(req.prompt_token_ids)
         gen_ids: list[int] = _as_list(req.output_token_ids)
 
         if len(gen_ids) == 0:
             continue
 
+        request_data.append((i, prompt_token_ids, gen_ids))
+
         # Concatenate prompt + generated tokens
         full_sequence = prompt_token_ids + gen_ids
         full_prompt = tinker.ModelInput.from_ints(full_sequence)
 
-        # Get logprobs for the full sequence
-        logprob_result = sampling_client.sample(
+        # Submit request (returns a Future)
+        future = sampling_client.sample(
             prompt=full_prompt,
             sampling_params=tinker.SamplingParams(max_tokens=1),
             num_samples=1,
             include_prompt_logprobs=True,
             topk_prompt_logprobs=topk_logprobs,
-        ).result()
+        )
+        futures.append((i, future))
+
+    # Collect all results
+    iterator = zip(request_data, futures)
+    if verbose:
+        iterator = tqdm(list(zip(request_data, futures)), desc="Verifying via Tinker API")
+
+    for (i, prompt_token_ids, gen_ids), (_, future) in iterator:
+        logprob_result = future.result()
 
         # Convert Tinker's logprob format to tensor
         prompt_len = len(prompt_token_ids)
