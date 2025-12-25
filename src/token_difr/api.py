@@ -6,7 +6,6 @@ from typing import Iterator
 
 import torch
 from openai import AsyncOpenAI
-from openai.types.completion_choice import Logprobs
 from tqdm import tqdm
 
 from token_difr.common import (
@@ -79,18 +78,20 @@ async def _fetch_fireworks_logprobs(
     client: AsyncOpenAI,
     model: str,
     topk_logprobs: int,
-) -> Logprobs | None:
+):
     """Fetch logprobs from Fireworks API."""
     # Pass token IDs directly to avoid tokenization mismatches
+    # Use logprobs=True with extra_body to get content format with token_ids
     response = await client.completions.create(
         model=model,
         prompt=prompt_token_ids + gen_ids,
         max_tokens=1,
-        logprobs=topk_logprobs,
         echo=True,
+        logprobs=True,
+        extra_body={"top_logprobs": topk_logprobs},
     )
 
-    return response.choices[0].logprobs
+    return response.choices[0].logprobs.content
 
 
 def _iter_tinker_logprobs(
@@ -130,31 +131,32 @@ def _iter_tinker_logprobs(
 
 
 def _fireworks_to_sparse_logprobs(
-    top_logprobs: list[dict[str, float] | None],
+    content: list,
     start_idx: int,
     n_tokens: int,
-    tokenizer,
 ) -> list[PositionLogprobs]:
-    """Convert Fireworks logprobs to sparse format matching Tinker's output.
+    """Convert Fireworks logprobs content to sparse format.
+
+    Args:
+        content: List of logprob entries from Fireworks API (each has token_id, top_logprobs).
+        start_idx: Index to start slicing from.
+        n_tokens: Number of tokens to extract.
 
     Returns per-position sparse logprobs where each entry is either None
     or a list of (token_id, logprob) tuples.
     """
-    slice_rows = top_logprobs[start_idx : start_idx + n_tokens]
+    slice_rows = content[start_idx : start_idx + n_tokens]
     if len(slice_rows) != n_tokens:
         raise ValueError(f"Expected {n_tokens} logprob rows, got {len(slice_rows)}")
 
     result: list[PositionLogprobs] = []
     for row in slice_rows:
-        if row is None:
+        if row is None or "top_logprobs" not in row:
             result.append(None)
             continue
 
-        token_logprobs: list[tuple[int, float]] = []
-        for token_str, logprob in row.items():
-            token_ids = tokenizer.encode(token_str, add_special_tokens=False)
-            if len(token_ids) == 1:
-                token_logprobs.append((token_ids[0], logprob))
+        # Extract (token_id, logprob) tuples directly - no encoding needed
+        token_logprobs = [(entry["token_id"], entry["logprob"]) for entry in row["top_logprobs"]]
         result.append(token_logprobs if token_logprobs else None)
 
     return result
@@ -164,7 +166,6 @@ async def _fetch_all_fireworks_logprobs(
     request_data: list[tuple[int, list[int], list[int]]],
     client: AsyncOpenAI,
     model: str,
-    tokenizer,
     topk_logprobs: int,
     verbose: bool,
     concurrency: int = 10,
@@ -174,24 +175,18 @@ async def _fetch_all_fireworks_logprobs(
 
     async def fetch_one(i: int, prompt_token_ids: list[int], gen_ids: list[int]) -> SparseLogprobs:
         async with semaphore:
-            logprobs_data = await _fetch_fireworks_logprobs(
+            content = await _fetch_fireworks_logprobs(
                 prompt_token_ids=prompt_token_ids,
                 gen_ids=gen_ids,
                 client=client,
                 model=model,
                 topk_logprobs=topk_logprobs,
             )
-            prompt_len = len(prompt_token_ids)
-            gen_len = len(gen_ids)
-
-            # When using token IDs directly, Fireworks doesn't prepend an extra BOS
-            start_idx = prompt_len
 
             sparse_logprobs = _fireworks_to_sparse_logprobs(
-                logprobs_data.top_logprobs,
-                start_idx=start_idx,
-                n_tokens=gen_len,
-                tokenizer=tokenizer,
+                content=content,
+                start_idx=len(prompt_token_ids),
+                n_tokens=len(gen_ids),
             )
             return SparseLogprobs(index=i, gen_ids=gen_ids, logprobs=sparse_logprobs)
 
@@ -413,7 +408,6 @@ async def verify_outputs_fireworks(
     seed: int,
     client: AsyncOpenAI,
     model: str,
-    tokenizer,
     topk_logprobs: int = 20,
     verbose: bool = True,
     concurrency: int = 10,
@@ -437,7 +431,6 @@ async def verify_outputs_fireworks(
         seed: Random seed used during generation.
         client: An AsyncOpenAI client configured for Fireworks.
         model: The Fireworks model name.
-        tokenizer: HuggingFace tokenizer for the model.
         topk_logprobs: Number of top logprobs to request. Default: 20.
         verbose: Whether to show progress and print a summary. Default: True.
         concurrency: Maximum number of concurrent requests. Default: 10.
@@ -454,7 +447,6 @@ async def verify_outputs_fireworks(
         request_data=request_data,
         client=client,
         model=model,
-        tokenizer=tokenizer,
         topk_logprobs=topk_logprobs,
         verbose=verbose,
         concurrency=concurrency,

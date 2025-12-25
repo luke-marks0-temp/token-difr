@@ -153,7 +153,6 @@ def test_verify_outputs_fireworks(temperature):
         seed=seed,
         client=client,
         model=FIREWORKS_MODEL,
-        tokenizer=tokenizer,
         topk_logprobs=5,
     ))
 
@@ -310,7 +309,6 @@ def test_verify_openrouter_generation_with_fireworks():
         seed=seed,
         client=fireworks_client,
         model=FIREWORKS_MODEL,
-        tokenizer=tokenizer,
         topk_logprobs=5,
     ))
 
