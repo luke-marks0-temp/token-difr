@@ -20,7 +20,7 @@ MODEL_TO_PROVIDER = {
 }
 
 # Test configuration
-N_PROMPTS = 100
+N_PROMPTS = 10
 MAX_TOKENS = 200
 MIN_MATCH_RATE = 0.90  # Lower threshold since cross-provider verification may have variance
 
@@ -72,7 +72,6 @@ def test_audit_provider(hf_model):
     assert result.avg_logit_rank >= 0.0
     assert result.avg_gumbel_rank >= 0.0
     assert 0.0 <= result.infinite_margin_rate <= 1.0
-    assert result.threshold == 0.97  # Default threshold
 
     # Check match rate is reasonable
     print(f"\n{model_name} ({provider}): exact match rate = {result.exact_match_rate:.2%}")

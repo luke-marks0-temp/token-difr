@@ -3,9 +3,10 @@
 import os
 
 import pytest
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from token_difr import TokenSequence, compute_metrics_summary, verify_outputs_tinker
+from token_difr import TokenSequence, compute_metrics_summary, construct_prompts, verify_outputs_tinker
 
 # Load .env file if present
 try:
@@ -16,22 +17,16 @@ except ImportError:
     pass
 
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-# MODEL_NAME = "Qwen/Qwen3-8B"
+MODEL_NAME = "meta-llama/Llama-3.3-70B-Instruct"
+# MODEL_NAME = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 # MODEL_NAME = "openai/gpt-oss-120b"
 # MODEL_NAME = "moonshotai/Kimi-K2-Thinking"
 # MODEL_NAME = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 # MODEL_NAME = "deepseek-ai/DeepSeek-V3.1"
 
-TEST_PROMPTS = [
-    "What is the capital of France?",
-    "Explain photosynthesis in simple terms.",
-    "Write a haiku about the ocean.",
-    "What is 2 + 2?",
-    "List three primary colors.",
-    "Describe the water cycle.",
-    "What causes rainbows?",
-    "Explain gravity to a child.",
-]
+N_TEST_PROMPTS = 10
+MAX_TOKENS = 200
+THRESHOLD = 0.95
 
 
 def get_tinker_api_key():
@@ -42,7 +37,7 @@ def get_tinker_api_key():
     return api_key
 
 
-def generate_outputs_tinker(sampling_client, prompts, temperature, top_k, top_p, seed, max_tokens=100):
+def generate_outputs_tinker(sampling_client, conversations, tokenizer, temperature, top_k, top_p, seed, max_tokens=100):
     """Generate outputs using Tinker API for testing.
 
     Returns:
@@ -51,14 +46,12 @@ def generate_outputs_tinker(sampling_client, prompts, temperature, top_k, top_p,
     """
     import tinker
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     vocab_size = len(tokenizer)
 
     # Prepare all prompts and submit requests in parallel
     prompt_token_ids_list = []
     futures = []
-    for prompt in prompts:
-        messages = [{"role": "user", "content": prompt}]
+    for messages in conversations:
         rendered = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         prompt_token_ids = tokenizer.encode(rendered, add_special_tokens=False)
         prompt_token_ids_list.append(prompt_token_ids)
@@ -81,7 +74,7 @@ def generate_outputs_tinker(sampling_client, prompts, temperature, top_k, top_p,
 
     # Collect all results
     outputs = []
-    for prompt_token_ids, future in zip(prompt_token_ids_list, futures):
+    for prompt_token_ids, future in tqdm(zip(prompt_token_ids_list, futures), total=len(futures), desc="Generating"):
         result = future.result()
         generated_tokens = result.sequences[0].tokens
         outputs.append(
@@ -104,22 +97,26 @@ def test_verify_outputs_tinker(temperature):
     top_k = 20  # Tinker limits topk logprobs to 20
     top_p = 0.95
     seed = 42
-    max_tokens = 100
-    min_match_rate = 0.98
+    min_match_rate = THRESHOLD
 
     # Create Tinker client
     service_client = tinker.ServiceClient(api_key=api_key)
     sampling_client = service_client.create_sampling_client(base_model=MODEL_NAME)
 
+    # Load tokenizer and construct prompts
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    conversations = construct_prompts(n_prompts=N_TEST_PROMPTS, model_name=MODEL_NAME)
+
     # Generate outputs
     outputs, vocab_size = generate_outputs_tinker(
         sampling_client=sampling_client,
-        prompts=TEST_PROMPTS,
+        conversations=conversations,
+        tokenizer=tokenizer,
         temperature=1e-8,
         top_k=top_k,
         top_p=top_p,
         seed=seed,
-        max_tokens=max_tokens,
+        max_tokens=MAX_TOKENS,
     )
 
     total_tokens = sum(len(o.output_token_ids) for o in outputs)

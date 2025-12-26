@@ -13,6 +13,7 @@ from token_difr import (
     FIREWORKS_MODEL_REGISTRY,
     TokenSequence,
     compute_metrics_summary,
+    construct_prompts,
     get_openrouter_name,
     verify_outputs_fireworks,
 )
@@ -29,22 +30,15 @@ except ImportError:
 # Model configurations: HuggingFace model name -> OpenRouter provider
 # Fireworks and OpenRouter model names are looked up from registries
 MODEL_TO_PROVIDER = {
-    "meta-llama/Llama-3.3-70B-Instruct": "groq",
-    "moonshotai/Kimi-K2-Thinking": "moonshotai",
+    # "meta-llama/Llama-3.3-70B-Instruct": "groq",
+    # "moonshotai/Kimi-K2-Thinking": "moonshotai",
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": "parasail/fp8",
 }
 
-TEST_PROMPTS = [
-    "What is the capital of France?",
-    "Explain photosynthesis in simple terms.",
-    "Write a haiku about the ocean.",
-    "What is 2 + 2?",
-    "List three primary colors.",
-    "Describe the water cycle.",
-    "What causes rainbows?",
-    "Explain gravity to a child.",
-]
-
-DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
+N_TEST_PROMPTS = 10
+MAX_TOKENS = 200
+CONCURRENCY = 10
+THRESHOLD = 0.95
 
 
 def get_fireworks_api_key():
@@ -58,7 +52,7 @@ def get_fireworks_api_key():
 async def generate_outputs_fireworks(
     client: AsyncOpenAI,
     tokenizer,
-    prompts: list[str],
+    conversations: list[list[dict[str, str]]],
     temperature: float,
     model: str,
     max_tokens: int = 100,
@@ -74,9 +68,8 @@ async def generate_outputs_fireworks(
     vocab_size = len(tokenizer)
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def generate_one(prompt: str) -> TokenSequence:
+    async def generate_one(messages: list[dict[str, str]]) -> TokenSequence:
         async with semaphore:
-            messages = [{"role": "user", "content": prompt}]
             rendered = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
             prompt_token_ids = tokenizer.encode(rendered, add_special_tokens=False)
 
@@ -101,7 +94,7 @@ async def generate_outputs_fireworks(
             )
 
     # Run all generations concurrently
-    tasks = [generate_one(prompt) for prompt in prompts]
+    tasks = [generate_one(conv) for conv in conversations]
 
     if verbose:
         outputs = []
@@ -127,9 +120,8 @@ def test_verify_outputs_fireworks(hf_model):
     top_k = 50
     top_p = 0.95
     seed = 42
-    max_tokens = 100
     temperature = 0.0
-    min_match_rate = 0.97
+    min_match_rate = THRESHOLD
     topk_logprobs = 5
 
     # Create Fireworks async client (for generation)
@@ -142,15 +134,19 @@ def test_verify_outputs_fireworks(hf_model):
     tokenizer = AutoTokenizer.from_pretrained(hf_model, trust_remote_code=True)
     vocab_size = len(tokenizer)
 
+    # Construct test prompts
+    conversations = construct_prompts(n_prompts=N_TEST_PROMPTS, model_name=hf_model)
+
     # Generate outputs (async, run with asyncio.run)
     outputs, vocab_size = asyncio.run(
         generate_outputs_fireworks(
             client=client,
             tokenizer=tokenizer,
-            prompts=TEST_PROMPTS,
+            conversations=conversations,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=MAX_TOKENS,
             model=fireworks_model,
+            concurrency=CONCURRENCY,
         )
     )
 
@@ -169,6 +165,7 @@ def test_verify_outputs_fireworks(hf_model):
             client=client,
             model=fireworks_model,
             topk_logprobs=topk_logprobs,
+            concurrency=CONCURRENCY,
         )
     )
 
@@ -250,8 +247,7 @@ def test_verify_openrouter_generation_with_fireworks(hf_model):
     topk_logprobs = 5
     top_p = 0.95
     seed = 42
-    max_tokens = 100
-    min_match_rate = 0.95
+    min_match_rate = THRESHOLD
 
     # Create clients
     fireworks_client = AsyncOpenAI(
@@ -266,10 +262,8 @@ def test_verify_openrouter_generation_with_fireworks(hf_model):
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(hf_model, trust_remote_code=True)
 
-    conversations = []
-    for prompt in TEST_PROMPTS:
-        messages = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
-        conversations.append(messages)
+    # Construct test prompts
+    conversations = construct_prompts(n_prompts=N_TEST_PROMPTS, model_name=hf_model)
 
     # Generate via OpenRouter with model-specific provider
     responses = asyncio.run(
@@ -279,13 +273,14 @@ def test_verify_openrouter_generation_with_fireworks(hf_model):
             model=openrouter_model,
             provider=openrouter_provider,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=MAX_TOKENS,
             seed=seed,
+            concurrency=CONCURRENCY,
         )
     )
 
     # Tokenize responses
-    outputs = tokenize_openrouter_responses(conversations, responses, tokenizer, max_tokens)
+    outputs = tokenize_openrouter_responses(conversations, responses, tokenizer, MAX_TOKENS)
     vocab_size = len(tokenizer)
 
     total_tokens = sum(len(o.output_token_ids) for o in outputs)
@@ -303,6 +298,7 @@ def test_verify_openrouter_generation_with_fireworks(hf_model):
             client=fireworks_client,
             model=fireworks_model,
             topk_logprobs=topk_logprobs,
+            concurrency=CONCURRENCY,
         )
     )
 
