@@ -2,13 +2,28 @@
 
 Verify that LLM API providers are running the models they claim.
 
-Generate tokens from any provider via OpenRouter, then verify against a reference provider that returns logprobs for prompt tokens. By default we use Fireworks as the reference because they support most open-weight models. You can also verify against locally hosted models (via vLLM) or Tinker.
+## The Problem
 
-Each token is an independent verification point—100 prompts × 200 tokens = 20,000 data points with minimal API cost.
+When you call an API claiming to serve "Llama 3.3 70B Instruct", how do you know that's actually what's running? Providers might have bugs, substitute smaller models, use aggressive quantization, or apply undisclosed modifications.
 
-## Why this approach?
+Traditional benchmarks are expensive and noisy. A single evaluation question might generate thousands of tokens but only counts as one data point. Evaluation results often vary by ±5-10% between runs with significant inference costs. See [Why Benchmarking Is Hard](https://epoch.ai/gradient-updates/why-benchmarking-is-hard) for more on the challenges.
 
-Traditional model evaluations require models to answer questions, often generating 1000+ tokens per question with high variance. Token-level verification treats each generated token as a single forward pass, providing high statistical significance with fewer tokens and lower cost.
+## The Solution
+
+With greedy decoding (temperature=0), identical models produce identical outputs (with some small divergence due to floating point noise). If a provider claims to run Model X, their token-by-token outputs should almost exactly match a trusted copy of Model X.
+
+Token-level verification can cheaply get statistically significant results as each token is an independent data point. 100 prompts × 200 output tokens = 20,000 samples. With this sample size, match rates are stable to +-0.1% between runs, and a provider audit typically costs less than $0.02.
+
+**Typical results**: Match rates are generally 95%+ across providers. When providers return prompt and response tokens directly (avoiding re-tokenization), match rates often exceed 98%.
+
+## How It Works
+
+1. **Generate**: Send prompts to a provider via OpenRouter and collect responses
+2. **Tokenize**: Convert responses to token IDs using the model's HuggingFace tokenizer
+3. **Verify**: Send token sequences to a reference provider (Fireworks by default) that provides prompt log-probs to get the probability the model assigns to each token
+4. **Compare**: Check if the generated tokens match what the reference would have produced
+
+If the match rate is high, you have strong evidence the provider is running the claimed model. Low match rates indicate divergence—which could be a different model, modified system prompt, or other changes.
 
 ## Installation
 
@@ -52,15 +67,6 @@ print(result)
 # example AuditResult(98.3% match rate, 18421 tokens across 100 sequences)
 ```
 
-## How It Works
-
-1. **Generate**: Send prompts to a provider via OpenRouter and collect responses
-2. **Tokenize**: Convert responses to token IDs using the model's HuggingFace tokenizer
-3. **Verify**: Send token sequences to Fireworks to get logprobs for each position
-4. **Compare**: Check if the generated tokens match what Fireworks would have produced
-
-All verification uses `temperature=0` (greedy decoding) because sampling seeds are not standardized across providers. With greedy decoding, the highest-probability token is always selected, making outputs deterministic and comparable.
-
 ## Understanding Results
 
 ```python
@@ -77,17 +83,15 @@ class AuditResult:
 
 ### What Scores Mean (and Don't Mean)
 
-The exact match rate is the primary metric because it's most interpretable: it measures what fraction of generated tokens exactly match what the reference provider would produce.
+The exact match rate measures what fraction of generated tokens exactly match what the reference provider would produce.
 
-**Important**: Low match rate scores indicate *divergence from reference*, not necessarily low quality. A high exact match rate (>98%) with a trusted reference can give high confidence in the provided model, but several factors can cause a low exact match rate.
-
-Divergence can occur for several reasons:
+**Important**: Low match rates indicate *divergence from reference*, not necessarily low quality. A high exact match rate with a trusted reference gives high confidence the provider is running the claimed model, but several factors can cause legitimate divergence:
 
 | Cause | Typical Impact | How to Identify |
 |-------|---------------|-----------------|
 | Different system prompt | 5-20% drop | Consistent across all prompts |
 | Different tokenization format | 1-5% drop | Often affects prompt boundaries |
-| Quantization | 1-3% drop | Consistent small reduction |
+| Quantization differences (fp8 vs bf16) | 1-3% drop | Consistent small reduction |
 | Tokenization drift from re-encoding | 1-3% drop | Random distribution of mismatches |
 | Genuinely different model | 20%+ drop | Often correlates with semantic differences |
 
@@ -97,6 +101,60 @@ There's no universal threshold that separates "good" from "bad" providers. Inste
 
 - **Baseline first**: Run the same model on multiple providers to establish what scores to expect
 - **Compare relatively**: A provider scoring 94% when others score 98% warrants investigation
+
+## Why Fireworks as the Reference?
+
+Fireworks is the default verification backend because:
+1. **Prompt logprobs**: Most providers only return logprobs for generated tokens. Fireworks returns logprobs for prompt tokens too—given a full sequence, it tells you what probability the model assigned to each token. This enables verification.
+2. **Model coverage**: Fireworks hosts most popular open-weight models.
+3. **API-only**: No local GPU required.
+
+You can also verify against locally hosted models (via vLLM) or Tinker for full control.
+
+### Trusting the Reference
+
+Since we verify providers against Fireworks, we need confidence that Fireworks itself is running the correct model. Two approaches:
+
+**Option 1: Cross-check with first-party APIs**
+
+Some model creators host their own APIs. For example, Moonshot hosts Kimi K2. Verify Fireworks gets high match rates against the first-party source:
+
+```python
+# Verify Fireworks matches Moonshot's own Kimi K2 endpoint
+result = audit_provider(
+    prompts,
+    model="moonshotai/Kimi-K2-Thinking",
+    provider="moonshotai",  # First-party provider
+)
+# If this shows high match rate, Fireworks is trustworthy for this model
+```
+
+**Option 2: One-time local verification**
+
+Generate reference outputs from a locally-hosted model, then save the token sequences. You can use these saved tokens to periodically verify that Fireworks (or any other provider) continues to match:
+
+```python
+from token_difr import verify_outputs, TokenSequence
+import json
+
+# One-time: generate and save reference tokens from local model
+# ... generate sequences locally with vLLM ...
+# ... save to reference_tokens.json ...
+
+# Periodic verification: load saved tokens and verify provider
+with open("reference_tokens.json") as f:
+    data = json.load(f)
+    sequences = [TokenSequence(**s) for s in data]
+
+results = verify_outputs(
+    sequences,
+    model_name="meta-llama/Llama-3.1-70B-Instruct",
+    temperature=0.0,
+    top_k=50,
+    top_p=0.95,
+    seed=42,
+)
+```
 
 ## Model Registry
 
@@ -110,7 +168,7 @@ print(FIREWORKS_MODEL_REGISTRY.keys())
 # dict_keys(['meta-llama/Llama-3.3-70B-Instruct', 'meta-llama/Llama-3.1-8B-Instruct', ...])
 ```
 
-In addition, OpenRouter sometimes uses different model names, but often just uses the lower case version of the HuggingFace name.
+OpenRouter typically uses the lowercase version of the HuggingFace name, but some models differ.
 
 ### Adding a New Model
 
@@ -123,7 +181,7 @@ register_fireworks_model(
     "accounts/fireworks/models/mistral-large-2"
 )
 
-# Occasionally OpenRouter names differ from hf_name.lower() as well
+# Only needed when OpenRouter name differs from hf_name.lower()
 register_openrouter_model(
     "Qwen/Qwen3-235B-A22B-Instruct-2507",
     "qwen/qwen3-235b-a22b-2507"
@@ -153,58 +211,6 @@ for provider in PROVIDERS:
 # Save results
 with open("audit_results.json", "w") as f:
     json.dump(results, f, indent=2)
-```
-
-## Why Fireworks as the Reference?
-
-Fireworks is used as the default verification backend because:
-1. **Prompt logprobs**: Most providers only return logprobs for generated tokens. Fireworks returns logprobs for prompt tokens too, enabling verification.
-2. **Model coverage**: Fireworks hosts most popular open-weight models.
-3. **API-only**: No local GPU required.
-
-### Trusting the Reference
-
-Since we're verifying providers against Fireworks, we need confidence that Fireworks itself is correct. Two approaches:
-
-**Option 1: Cross-check with first-party APIs**
-
-Some model creators host their own APIs. For example, Moonshot hosts Kimi K2. Verify Fireworks gets high match rates against the first-party source:
-
-```python
-# Verify Fireworks matches Moonshot's own Kimi K2 endpoint
-result = audit_provider(
-    prompts,
-    model="moonshotai/Kimi-K2-Thinking",
-    provider="moonshotai",  # First-party provider
-)
-# If this passes, Fireworks is trustworthy for this model
-```
-
-**Option 2: One-time local verification**
-
-Generate reference outputs from a locally-hosted model, then save the token sequences. You can use these saved tokens to periodically verify that Fireworks (or any other provider) continues to match:
-
-```python
-from token_difr import verify_outputs, TokenSequence
-import json
-
-# One-time: generate and save reference tokens from local model
-# ... generate sequences locally with vLLM ...
-# ... save to reference_tokens.json ...
-
-# Periodic verification: load saved tokens and verify provider
-with open("reference_tokens.json") as f:
-    data = json.load(f)
-    sequences = [TokenSequence(**s) for s in data]
-
-results = verify_outputs(
-    sequences,
-    model_name="meta-llama/Llama-3.1-70B-Instruct",
-    temperature=0.0,
-    top_k=50,
-    top_p=0.95,
-    seed=42,
-)
 ```
 
 ## Advanced: Manual Verification Workflow
@@ -317,14 +323,13 @@ Detect if a provider modified the system prompt by verifying with your expected 
 # Low match rate suggests the actual system prompt differs
 ```
 
-See `system_prompt_detection.py` for a full example.
+See `demos/system_prompt_detection.py` for a full example.
 
 ## Limitations
 
 - **Temperature must be 0**: Sampling seeds are not standardized across providers, so only greedy decoding produces comparable outputs.
 - **Tokenization edge cases**: `encode(decode(tokens))` may not equal original tokens, causing ~1-3% of mismatches even for identical models.
 - **Model availability**: Both OpenRouter and Fireworks must support the model.
-- **Quantization effects**: FP8 vs BF16 quantization can cause small differences in outputs.
 
 ## API Reference
 
