@@ -23,20 +23,21 @@ import openai
 from openai import AsyncOpenAI
 from transformers import AutoTokenizer
 
-from token_difr import TokenSequence, compute_metrics_summary, verify_outputs_fireworks
+from token_difr import (
+    FIREWORKS_MODEL_REGISTRY,
+    compute_metrics_summary,
+    construct_prompts,
+    get_openrouter_name,
+    verify_outputs_fireworks,
+)
 from token_difr.openrouter_api import generate_openrouter_responses, tokenize_openrouter_responses
 
-# Model configuration: (hf_model, fireworks_model, openrouter_model, openrouter_provider)
-HF_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
-FIREWORKS_MODEL = "fireworks/llama-v3p3-70b-instruct"
-OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"
-OPENROUTER_PROVIDER = "groq"
-
-
+# Model configuration
 HF_MODEL = "moonshotai/Kimi-K2-Thinking"
-OPENROUTER_MODEL = "moonshotai/kimi-k2-thinking"
-FIREWORKS_MODEL = "fireworks/kimi-k2-thinking"
 OPENROUTER_PROVIDER = "moonshotai"
+# Derived from HF_MODEL
+FIREWORKS_MODEL = FIREWORKS_MODEL_REGISTRY[HF_MODEL]
+OPENROUTER_MODEL = get_openrouter_name(HF_MODEL)
 
 # System prompts to test
 SYSTEM_PROMPTS = {
@@ -96,6 +97,7 @@ async def run_experiment(
     top_p = 0.95
     seed = 42
     temperature = 0.0
+    concurrency = 30
 
     print(f"\n{'=' * 60}")
     print(f"System Prompt: {system_prompt_key}")
@@ -115,6 +117,7 @@ async def run_experiment(
         temperature=temperature,
         max_tokens=max_tokens,
         seed=seed,
+        concurrency=concurrency,
     )
 
     # For verification, use the BASE system prompt (what we "claim" was used)
@@ -148,6 +151,7 @@ async def run_experiment(
         client=fireworks_client,
         model=FIREWORKS_MODEL,
         topk_logprobs=5,
+        concurrency=concurrency,
     )
 
     summary = compute_metrics_summary(results)
@@ -192,13 +196,12 @@ async def main():
     vocab_size = len(tokenizer)
 
     # Load prompts (user messages only, no system prompt yet)
-    from token_difr import construct_prompts
-
     print(f"Loading {N_PROMPTS} prompts from WildChat dataset...")
     conversations = construct_prompts(
         n_prompts=N_PROMPTS,
         max_ctx_len=MAX_CTX_LEN,
         tokenizer=tokenizer,
+        system_prompt=None,  # We add system prompts manually in this experiment
     )
     print(f"Loaded {len(conversations)} prompts")
 
