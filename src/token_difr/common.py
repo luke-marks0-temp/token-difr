@@ -90,7 +90,7 @@ def construct_prompts(
             raise ValueError("Either tokenizer or model_name must be provided")
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
-    ds = load_dataset("allenai/WildChat-1M", split="train")
+    ds = load_dataset("allenai/WildChat-1M", split="train[:10000]")
 
     conversation_prompts: list[list[dict[str, str]]] = []
     unique_prompts: set[tuple[int, ...]] = set()
