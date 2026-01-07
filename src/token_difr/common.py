@@ -6,6 +6,7 @@ import math
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
+from itertools import islice
 
 import torch
 
@@ -90,16 +91,15 @@ def construct_prompts(
             raise ValueError("Either tokenizer or model_name must be provided")
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
-    ds = load_dataset("allenai/WildChat-1M", split="train[:10000]")
-
+    ds = load_dataset("allenai/WildChat-1M", split="train", streaming=True)
+    
     conversation_prompts: list[list[dict[str, str]]] = []
     unique_prompts: set[tuple[int, ...]] = set()
 
-    idx = 0
-    while len(conversation_prompts) < n_prompts and idx < len(ds):
-        sample = ds[idx]
-        idx += 1
-
+    for sample in islice(ds, 10000):
+        if len(conversation_prompts) >= n_prompts:
+            break
+            
         # Filter for English only
         if sample["language"].lower() != "english":  # type: ignore[index]
             continue
