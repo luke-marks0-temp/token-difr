@@ -14,17 +14,17 @@ PROVIDERS = [
     # "parasail/fp8",
     # "wandb/bf16",
     # "deepinfra/fp8",
-    # "novita/fp8",
-    # "siliconflow/fp8",
-    # "together",
-    # "fireworks/fp8",
-    # "cerebras",
+    "novita/fp8",
+    "siliconflow/fp8",
+    "together",
+    "fireworks/fp8",
+    "cerebras",
     "alibaba"
 ]
 
 # Audit parameters
-N_PROMPTS = 100
-MAX_TOKENS = 200
+N_PROMPTS = 20
+MAX_TOKENS = 100
 SEED = 42
 TOP_K = 50
 TOP_P = 0.95
