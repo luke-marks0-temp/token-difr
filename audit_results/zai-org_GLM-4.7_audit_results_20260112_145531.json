@@ -1,0 +1,23 @@
+{
+  "model": "zai-org/GLM-4.7",
+  "parameters": {
+    "n_prompts": 20,
+    "max_tokens": 100,
+    "seed": 42,
+    "top_k": 50,
+    "top_p": 0.95,
+    "temperature": 0.0
+  },
+  "providers": {
+    "novita/fp8": {
+      "exact_match_rate": 0.9535,
+      "avg_prob": 0.850610977679491,
+      "avg_margin": 0.011741437815656565,
+      "avg_logit_rank": 0.0875,
+      "avg_gumbel_rank": 0.0875,
+      "infinite_margin_rate": 0.01,
+      "total_tokens": 2000,
+      "n_sequences": 20
+    }
+  }
+}

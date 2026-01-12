@@ -1,0 +1,59 @@
+{
+  "model": "moonshotai/Kimi-K2-Instruct-0905",
+  "parameters": {
+    "n_prompts": 20,
+    "max_tokens": 100,
+    "seed": 42,
+    "top_k": 50,
+    "top_p": 0.95,
+    "temperature": 0.0
+  },
+  "providers": {
+    "novita/fp8": {
+      "exact_match_rate": 0.8967057509771078,
+      "avg_prob": 0.8210485506881318,
+      "avg_margin": 0.10849879732067953,
+      "avg_logit_rank": 0.13847012841987716,
+      "avg_gumbel_rank": 0.13847012841987716,
+      "infinite_margin_rate": 0.0016750418760469012,
+      "total_tokens": 1791,
+      "n_sequences": 20
+    },
+    "siliconflow/fp8": {
+      "exact_match_rate": 0.8794843049327354,
+      "avg_prob": 0.8052013524940588,
+      "avg_margin": 0.12488993098226826,
+      "avg_logit_rank": 0.16311659192825112,
+      "avg_gumbel_rank": 0.16311659192825112,
+      "infinite_margin_rate": 0.002242152466367713,
+      "total_tokens": 1784,
+      "n_sequences": 20
+    },
+    "together": {
+      "exact_match_rate": 0.8795379537953796,
+      "avg_prob": 0.8001585422119979,
+      "avg_margin": 0.11552682530465734,
+      "avg_logit_rank": 0.15896589658965896,
+      "avg_gumbel_rank": 0.15896589658965896,
+      "infinite_margin_rate": 0.0027502750275027505,
+      "total_tokens": 1818,
+      "n_sequences": 20
+    },
+    "fireworks/fp8": {
+      "exact_match_rate": 0.8665207877461707,
+      "avg_prob": 0.7939839217597461,
+      "avg_margin": 0.17474220473662438,
+      "avg_logit_rank": 0.21389496717724288,
+      "avg_gumbel_rank": 0.21389496717724288,
+      "infinite_margin_rate": 0.008205689277899343,
+      "total_tokens": 1828,
+      "n_sequences": 20
+    },
+    "cerebras": {
+      "error": "Error code: 404 - {'error': {'message': 'No allowed providers are available for the selected model.', 'code': 404}}"
+    },
+    "alibaba": {
+      "error": "Error code: 404 - {'error': {'message': 'No allowed providers are available for the selected model.', 'code': 404}}"
+    }
+  }
+}

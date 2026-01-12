@@ -1,0 +1,66 @@
+{
+  "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "parameters": {
+    "n_prompts": 50,
+    "max_tokens": 100,
+    "seed": 42,
+    "top_k": 50,
+    "top_p": 0.95,
+    "temperature": 0.0
+  },
+  "providers": {
+    "parasail/fp8": {
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit exceeded: limit_rpm/qwen/qwen3-235b-a22b-07-25/043eb28f-fc28-4b0d-9800-b249fcfcfbf9. High demand for qwen/qwen3-235b-a22b-2507 on OpenRouter - limited to 18 requests per minute. Please retry shortly.', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '18', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1768193700000'}, 'provider_name': None}}, 'user_id': 'user_2l152bn3bp13g6n2iBaxPOEhD1W'}"
+    },
+    "deepinfra/fp8": {
+      "exact_match_rate": 0.9483317886932344,
+      "avg_prob": 0.8450399511731105,
+      "avg_margin": 0.02813269481460023,
+      "avg_logit_rank": 0.05213160333642261,
+      "avg_gumbel_rank": 0.05213160333642261,
+      "infinite_margin_rate": 0.00023169601482854495,
+      "total_tokens": 4316,
+      "n_sequences": 50
+    },
+    "siliconflow/fp8": {
+      "exact_match_rate": 0.9522388059701492,
+      "avg_prob": 0.8464533628829585,
+      "avg_margin": 0.023670821074913893,
+      "avg_logit_rank": 0.046153846153846156,
+      "avg_gumbel_rank": 0.046153846153846156,
+      "infinite_margin_rate": 0.0,
+      "total_tokens": 4355,
+      "n_sequences": 50
+    },
+    "novita/fp8": {
+      "exact_match_rate": 0.9694954128440367,
+      "avg_prob": 0.8546107933352437,
+      "avg_margin": 0.012152379587155964,
+      "avg_logit_rank": 0.029357798165137616,
+      "avg_gumbel_rank": 0.029357798165137616,
+      "infinite_margin_rate": 0.0,
+      "total_tokens": 4360,
+      "n_sequences": 50
+    },
+    "together": {
+      "exact_match_rate": 0.966325369738339,
+      "avg_prob": 0.8557125717825315,
+      "avg_margin": 0.01190872973549488,
+      "avg_logit_rank": 0.028213879408418657,
+      "avg_gumbel_rank": 0.028213879408418657,
+      "infinite_margin_rate": 0.0,
+      "total_tokens": 4395,
+      "n_sequences": 50
+    },
+    "fireworks/fp8": {
+      "exact_match_rate": 0.9660360155003419,
+      "avg_prob": 0.8519392808165179,
+      "avg_margin": 0.011885740851573188,
+      "avg_logit_rank": 0.028493275586961478,
+      "avg_gumbel_rank": 0.028493275586961478,
+      "infinite_margin_rate": 0.00022794620469569182,
+      "total_tokens": 4387,
+      "n_sequences": 50
+    }
+  }
+}
