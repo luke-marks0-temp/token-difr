@@ -1,5 +1,6 @@
 import json
 import os
+import argparse
 from dataclasses import asdict
 from datetime import datetime
 
@@ -7,20 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from token_difr import audit_provider, construct_prompts
-
-HF_MODELS = [
-    "Qwen/Qwen3-235B-A22B-Instruct-2507",
-    "moonshotai/Kimi-K2-Instruct-0905",
-]
-
-PROVIDERS = [
-    "parasail/fp8",
-    "siliconflow/fp8",
-    "novita/fp8",
-    "together",
-    "fireworks/fp8",
-]
+from token_difr import audit_provider, construct_prompts, list_openrouter_providers
 
 # Audit parameters
 N_PROMPTS = 50
@@ -36,8 +24,29 @@ def save_results(results: dict, output_file: str) -> None:
         json.dump(results, f, indent=2)
 
 
-def main():
-    for HF_MODEL in HF_MODELS:
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Audit providers for one or more Hugging Face model names.",
+    )
+    parser.add_argument(
+        "models",
+        nargs="+",
+        help="One or more Hugging Face model names (e.g. Qwen/Qwen3-235B-A22B-Instruct-2507).",
+    )
+    return parser.parse_args()
+
+
+def main(models: list[str]) -> None:
+    for HF_MODEL in models:
+        try:
+            providers = list_openrouter_providers(HF_MODEL)
+        except Exception as exc:
+            print(f"Failed to list providers for {HF_MODEL}: {exc}")
+            continue
+        if not providers:
+            print(f"No providers listed for {HF_MODEL}")
+            continue
+
         prompts = construct_prompts(
             n_prompts=N_PROMPTS,
             model_name=HF_MODEL,
@@ -69,7 +78,7 @@ def main():
         save_results(results, output_file)
         print(f"Results will be saved to {output_file}")
 
-        for provider in PROVIDERS:
+        for provider in providers:
             print(f"\nAuditing provider: {provider}")
             try:
                 result = audit_provider(
@@ -100,4 +109,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.models)

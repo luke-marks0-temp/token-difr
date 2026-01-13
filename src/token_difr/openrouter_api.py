@@ -1,6 +1,9 @@
 import asyncio
 import json
 import os
+import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import openai
@@ -9,10 +12,179 @@ from transformers import AutoTokenizer
 from tqdm import tqdm
 
 from token_difr.common import TokenSequence, construct_prompts, encode_thinking_response
+from token_difr.model_registry import get_openrouter_name
+
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_ENDPOINTS_URL = "https://openrouter.ai/api/v1/models/{model_id}/endpoints"
 
 
 def _sanitize(name: str) -> str:
     return name.replace("/", "_").replace(".", "_")
+
+
+def _fetch_registry() -> list[dict]:
+    request = urllib.request.Request(
+        OPENROUTER_MODELS_URL,
+        headers={"User-Agent": "token-difr-openrouter-registry"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+
+    if isinstance(payload, dict) and "data" in payload:
+        return payload["data"]
+    if isinstance(payload, list):
+        return payload
+    raise ValueError("Unexpected OpenRouter registry response format")
+
+
+def _fetch_endpoints(model_id: str) -> list[dict]:
+    request = urllib.request.Request(
+        OPENROUTER_ENDPOINTS_URL.format(model_id=model_id),
+        headers={"User-Agent": "token-difr-openrouter-registry"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+
+    if isinstance(payload, dict) and "data" in payload:
+        data = payload["data"]
+        if isinstance(data, dict) and "endpoints" in data and isinstance(data["endpoints"], list):
+            return data["endpoints"]
+        if isinstance(data, list):
+            return data
+        raise ValueError("Unexpected OpenRouter endpoints data format")
+    if isinstance(payload, list):
+        return payload
+    raise ValueError("Unexpected OpenRouter endpoints response format")
+
+
+def _normalize_provider_entry(entry: object) -> str | None:
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        for key in ("provider", "name", "id"):
+            if key in entry:
+                return entry[key]
+    return None
+
+
+def _normalize_provider_slug(name: str) -> str:
+    cleaned = name.strip()
+    if " | " in cleaned:
+        cleaned = cleaned.split(" | ", 1)[0].strip()
+    if "/" in cleaned:
+        return cleaned.lower()
+    return re.sub(r"[^a-z0-9]+", "", cleaned.lower())
+
+
+def _extract_variant(endpoint: dict) -> str | None:
+    unknown_values = {"unknown", "none", "n/a", "na", "null"}
+    for key in ("variant", "quantization", "precision", "dtype"):
+        value = endpoint.get(key)
+        if isinstance(value, str) and value.strip():
+            cleaned = value.strip().lower()
+            if cleaned in unknown_values:
+                return None
+            return cleaned
+    for key in ("name", "model", "id"):
+        value = endpoint.get(key)
+        if not isinstance(value, str):
+            continue
+        match = re.search(r"(fp\d+|int\d+|bf16|f16|f32|fp16)", value.lower())
+        if match:
+            return match.group(1)
+    return None
+
+
+def _format_endpoint_provider(endpoint: dict) -> str | None:
+    for key in ("name", "id"):
+        value = endpoint.get(key)
+        if isinstance(value, str) and " | " in value:
+            provider = _normalize_provider_slug(value)
+            variant = _extract_variant(endpoint)
+            if variant and f"/{variant}" not in provider:
+                return f"{provider}/{variant}"
+            return provider
+
+    provider = endpoint.get("provider") or endpoint.get("provider_name")
+    name = _normalize_provider_entry(provider) or _normalize_provider_entry(endpoint)
+    if not name:
+        return None
+
+    slug = _normalize_provider_slug(name)
+    variant = _extract_variant(endpoint)
+    if variant and f"/{variant}" not in slug:
+        return f"{slug}/{variant}"
+    return slug
+
+
+def _extract_providers(model_entry: dict) -> list[str]:
+    providers_raw = model_entry.get("providers") or model_entry.get("provider") or []
+    if isinstance(providers_raw, dict):
+        providers_raw = [providers_raw]
+    if not isinstance(providers_raw, list):
+        providers_raw = []
+
+    providers = []
+    for entry in providers_raw:
+        name = _normalize_provider_entry(entry)
+        if name:
+            providers.append(_normalize_provider_slug(name))
+
+    top_provider = model_entry.get("top_provider")
+    if isinstance(top_provider, dict):
+        top_name = _normalize_provider_entry(top_provider)
+        if top_name:
+            providers.append(_normalize_provider_slug(top_name))
+
+    endpoints = model_entry.get("endpoints") or []
+    if isinstance(endpoints, dict):
+        endpoints = [endpoints]
+    if isinstance(endpoints, list):
+        for endpoint in endpoints:
+            if not isinstance(endpoint, dict):
+                continue
+            name = _format_endpoint_provider(endpoint)
+            if name:
+                providers.append(name)
+
+    return sorted(set(providers))
+
+
+def list_openrouter_providers(model: str) -> list[str]:
+    """List OpenRouter providers (with quantization) serving a model.
+
+    Args:
+        model: Hugging Face or OpenRouter model name.
+
+    Returns:
+        Sorted list of provider strings (e.g., ["deepinfra/fp8", "groq"]).
+    """
+    openrouter_model = get_openrouter_name(model)
+    models = _fetch_registry()
+
+    match = None
+    for entry in models:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("id") == openrouter_model:
+            match = entry
+            break
+
+    if match is None:
+        raise ValueError(f"Model not found in OpenRouter registry: {openrouter_model}")
+
+    providers = _extract_providers(match)
+    if providers:
+        return providers
+
+    endpoints = _fetch_endpoints(openrouter_model)
+    for endpoint in endpoints:
+        if not isinstance(endpoint, dict):
+            continue
+        name = _format_endpoint_provider(endpoint)
+        if name:
+            providers.append(name)
+    return sorted(set(providers))
 
 
 async def generate_openrouter_responses(

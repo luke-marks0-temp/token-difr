@@ -24,7 +24,7 @@ from token_difr.model_registry import (
     register_fireworks_model,
     register_openrouter_model,
 )
-from token_difr.openrouter_api import tokenize_openrouter_responses
+from token_difr.openrouter_api import list_openrouter_providers, tokenize_openrouter_responses
 from token_difr.local import verify_outputs
 
 __version__ = "0.1.2"
@@ -39,6 +39,7 @@ __all__ = [
     "verify_outputs_fireworks",
     "verify_outputs_tinker",
     "tokenize_openrouter_responses",
+    "list_openrouter_providers",
     "TokenSequence",
     "TokenMetrics",
     "SamplingMethod",

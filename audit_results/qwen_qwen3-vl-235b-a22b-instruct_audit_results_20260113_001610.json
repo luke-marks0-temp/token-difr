@@ -1,0 +1,40 @@
+{
+  "model": "qwen/qwen3-vl-235b-a22b-instruct",
+  "parameters": {
+    "n_prompts": 50,
+    "max_tokens": 100,
+    "seed": 42,
+    "top_k": 50,
+    "top_p": 0.95,
+    "temperature": 0.0
+  },
+  "providers": {
+    "alibaba": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "atlascloud/fp8": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "chutes/bf16": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "deepinfra/fp8": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "fireworks": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "gmicloud/fp8": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "novita/bf16": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "parasail/fp8": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    },
+    "siliconflow/fp8": {
+      "error": "Model qwen/qwen3-vl-235b-a22b-instruct not in FIREWORKS_MODEL_REGISTRY. Use register_fireworks_model() to add it first."
+    }
+  }
+}
