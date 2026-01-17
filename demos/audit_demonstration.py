@@ -11,8 +11,8 @@ load_dotenv()
 from token_difr import audit_provider, construct_prompts, list_openrouter_providers
 
 # Audit parameters
-N_PROMPTS = 50
-MAX_TOKENS = 100
+N_PROMPTS = 100
+MAX_TOKENS = 200
 SEED = 42
 TOP_K = 50
 TOP_P = 0.95
